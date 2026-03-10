@@ -25,14 +25,11 @@ export async function POST(request: NextRequest) {
 
     if (error || !user) {
       console.error("DB query error:", error)
-      console.log("Documento buscado:", documento)
       return NextResponse.json(
         { error: "Credenciales inválidas" },
         { status: 401 }
       )
     }
-
-    console.log("User found:", user.nombre, "| Rol:", user.rol, "| Activo:", user.activo, "| Has hash:", !!user.password_hash)
 
     // Check active
     if (!user.activo) {
