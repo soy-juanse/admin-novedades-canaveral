@@ -49,6 +49,7 @@ interface Novedad {
   novedad_tipo: string | null
   codigo_manual: string | null
   cantidad: number | null
+  cantidad_teorica?: number | null
   foto_producto_url: string | null
   foto_documento_url: string | null
   comentario: string | null
@@ -326,6 +327,12 @@ export default function NovedadesPage() {
                   <p className="text-sm font-medium text-muted-foreground">Cantidad</p>
                   <p className="text-foreground">{selectedNovedad.cantidad ?? "—"}</p>
                 </div>
+                {selectedNovedad.cantidad_teorica !== undefined && selectedNovedad.cantidad_teorica !== null && (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-muted-foreground">Cantidad Teórica</p>
+                    <p className="text-foreground">{selectedNovedad.cantidad_teorica}</p>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1">
