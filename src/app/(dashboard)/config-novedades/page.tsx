@@ -39,6 +39,7 @@ interface ConfigNovedad {
   novedad_tipo: string
   destinatarios: string[] | null
   activo: boolean
+  requiere_cantidad_teorica?: boolean
 }
 
 interface Grupo {
@@ -63,7 +64,7 @@ function buildTree(configs: ConfigNovedad[]): TreeNode[] {
     origenes[c.origen][c.categoria].push({ id: c.id, novedad_tipo: c.novedad_tipo })
   }
 
-  const origenOrder = ["FACTURA", "TRASLADO", "INVENTARIO"]
+  const origenOrder = ["FACTURA", "TRASLADO", "INVENTARIO", "ABASTECIMIENTO"]
 
   return origenOrder
     .filter((o) => origenes[o])
@@ -285,7 +286,7 @@ function ConfigurarGrupo({ onSaved }: { onSaved: () => void }) {
       </div>
 
       {selectedGrupo && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-4">
           {tree.map((node) => {
             const origenIds = node.categorias.flatMap((c) => c.tipos.map((t) => t.id))
             const origenChecked = origenIds.filter((id) => checkedIds.has(id)).length

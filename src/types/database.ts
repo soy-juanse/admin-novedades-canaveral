@@ -35,6 +35,7 @@ export interface Novedad {
   novedad_tipo: string | null
   codigo_manual: string | null
   cantidad: number | null
+  cantidad_teorica?: number | null
   foto_producto_url: string | null
   foto_documento_url: string | null
   comentario: string | null
@@ -55,6 +56,7 @@ export interface ConfigNovedad {
   categoria: string
   tipo_novedad: string
   activo: boolean
+  requiere_cantidad_teorica?: boolean
   destinatarios: string | null
   created_at: string
 }
