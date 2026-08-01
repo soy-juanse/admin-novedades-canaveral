@@ -6,8 +6,42 @@
 
 Panel administrativo web para gestionar el sistema de **Novedades Logísticas** de **Supertiendas Cañaveral**. Los auxiliares de bodega reportan novedades (problemas con mercancía) desde una PWA móvil; este admin permite a los administradores gestionar usuarios, configurar qué novedades se reportan, definir destinatarios de emails, y administrar sedes.
 
-**URL producción:** https://sync-admin-novedades.jpssny.easypanel.host
+**URL producción:** https://admin-novedades-canaveral.vercel.app
 **Operadora principal:** Julieth (tiene manual de uso en `/Manual-Admin-Novedades.docx`)
+
+---
+
+## Protocolo de trabajo con el PM
+Este proyecto sigue un flujo PM → Desarrollador con auditoría bidireccional.
+Cuando recibas una instrucción marcada como proveniente del PM:
+1. AUDITA la instrucción contra el OBJETIVO declarado, no solo su viabilidad
+   técnica. Si crees que la instrucción no logra el objetivo, o existe un
+   camino más simple, dilo ANTES de codear.
+2. Presenta todas tus dudas antes de comenzar. No asumas: pregunta.
+3. Solo codifica tras luz verde explícita del usuario.
+4. Al terminar, informa SIEMPRE con un historial de decisiones: qué decidiste,
+   por qué, qué alternativas descartaste y qué te generó dudas. Ese historial
+   será auditado por el PM junto con el código.
+5. No marques nada como terminado si los criterios de aceptación de la
+   instrucción no se cumplen completos.
+
+**Fuente de verdad de decisiones:** `/PWA/pwa-novedades/DECISIONS.md` (repo PWA).
+
+## Modelo multi-sede (Fase 3) e INVARIANTE
+Un usuario tiene una **sede principal** (`usuarios.sede_codigo`) y opcionalmente
+**sedes adicionales**. La columna `usuarios.sedes text[]` es el array completo y
+SIEMPRE se construye en el servidor como `[principal, ...adicionales]` (principal
+en `[0]`, deduplicado). La PWA muestra un selector de jornada cuando el usuario
+tiene 2+ sedes; el trigger de novedades valida server-side que la sede reportada
+pertenezca al array.
+
+**INVARIANTE INNEGOCIABLE:** todo usuario DEBE tener `sede_codigo` NOT NULL y
+`sedes` DEBE contener siempre la principal — nunca NULL, nunca `[]`, nunca sin la
+principal. El trigger usa `sede_codigo IS NULL` como centinela de "usuario no
+encontrado"; un usuario con principal NULL + array poblado abriría un hueco de
+sede ajena. La garantía vive en la **API** (POST/PUT de usuarios reconstruyen el
+array e ignoran cualquier `sedes` del body), no en la UI (un request directo la
+salta). La baja de personal es **desactivar** (`activo=false`), NUNCA borrar.
 
 ---
 
@@ -23,8 +57,8 @@ Panel administrativo web para gestionar el sistema de **Novedades Logísticas** 
 | Tablas | TanStack React Table | 8.x |
 | Auth | JWT custom (jose) + bcryptjs | - |
 | Backend | Supabase (PostgreSQL + REST) | supabase-js 2.99 |
-| Deploy | Docker (standalone) → Easypanel | node:20-alpine |
-| Repo | github.com/soy-juanse/admin-novedades | público |
+| Deploy | Vercel (integración GitHub, auto-deploy) | - |
+| Repo | github.com/soy-juanse/admin-novedades-canaveral | público |
 
 ---
 
@@ -168,18 +202,19 @@ JWT_SECRET=<string-seguro>
 NODE_ENV=production
 ```
 
-En Easypanel estas variables se configuran como Environment Variables del servicio. Las `NEXT_PUBLIC_*` también deben ir como Build Args en el Dockerfile.
+En Vercel estas variables se configuran en Settings → Environment Variables (scopes Production y Preview). Las `NEXT_PUBLIC_*` se incrustan en el bundle durante el build.
 
 ---
 
 ## Deploy
 
-### Pipeline actual
-1. Push a `main` en GitHub (soy-juanse/admin-novedades)
-2. Easypanel detecta el push (o rebuild manual)
-3. Docker multi-stage build: deps → build → runner
-4. Imagen final: ~120MB, node:20-alpine, usuario no-root `nextjs`
-5. Puerto 3000 expuesto
+### Pipeline actual (Vercel, desde 2026-05-05)
+1. Push a `main` en GitHub (soy-juanse/admin-novedades-canaveral) → **deploy de producción** automático.
+2. Push de una rama feature o PR → **preview deploy** automático (URL propia por rama).
+3. Producción: https://admin-novedades-canaveral.vercel.app
+4. Env vars gestionadas en el panel de Vercel (Settings → Environment Variables), con scope Production y Preview. Las `NEXT_PUBLIC_*` se incrustan en build.
+
+> El pipeline anterior era Docker (standalone) → Easypanel; se migró a Vercel el 2026-05-05.
 
 ### Comandos útiles
 ```bash
@@ -189,9 +224,8 @@ cd admin && npm run dev
 # Build local (requiere env vars)
 NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... npm run build
 
-# Push a producción
+# Deploy a producción: push a main (Vercel auto-deploya)
 git add -A && git commit -m "descripción" && git push origin main
-# Luego rebuild en Easypanel
 ```
 
 ### GitHub auth (cuenta soy-juanse)
@@ -218,7 +252,7 @@ Ver `DECISIONS.md` en la raíz de `/PWA/` para el historial completo de decision
 ## Deuda técnica conocida
 
 1. **Orphaned rol_codigos**: Cuando se elimina un grupo de destinatarios, sus `rol_codigo` quedan en el array `destinatarios` de `config_novedades`. Falta un trigger o cascade que limpie.
-2. **Auto-deploy**: No hay webhook de GitHub → Easypanel. El rebuild es manual.
+2. **Auto-deploy**: RESUELTO con la migración a Vercel (2026-05-05) — push a `main` auto-deploya producción; las ramas feature generan preview automático.
 3. **Dominio custom**: La app corre en subdominio de Easypanel. Se puede configurar dominio propio.
 4. **Tests**: No hay tests automatizados. Todo se probó manualmente.
 5. **Dashboard**: El enlace a Looker Studio en el sidebar es placeholder.
@@ -256,5 +290,5 @@ No tocar la tabla `productos` desde este admin — se sincroniza externamente.
 2. Crear API routes en `src/app/api/nuevo-modulo/route.ts` y `[id]/route.ts`
 3. Agregar enlace en `src/components/layout/sidebar.tsx`
 4. Agregar tipos en `src/types/database.ts`
-5. Probar en local, push, rebuild en Easypanel
-6. Actualizar `DECISIONS.md` con la decisión
+5. Probar en local, push (Vercel auto-deploya: rama feature = preview, `main` = producción)
+6. Actualizar `DECISIONS.md` con la decisión (repo PWA)
