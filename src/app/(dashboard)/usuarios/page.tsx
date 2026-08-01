@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { ColumnDef } from "@tanstack/react-table"
-import { Plus, Pencil, UserX, UserCheck, Trash2, MoreHorizontal, Eye, EyeOff } from "lucide-react"
+import { Plus, Pencil, UserX, UserCheck, MoreHorizontal, Eye, EyeOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -43,6 +43,7 @@ interface Usuario {
   cargo: string
   rol: string
   sede_codigo: string
+  sedes?: string[]
   sede_nombre?: string
   activo: boolean
 }
@@ -58,6 +59,8 @@ export default function UsuariosPage() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
+  const [searchInput, setSearchInput] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const pageSize = 10
 
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -70,6 +73,7 @@ export default function UsuariosPage() {
     cargo: "",
     rol: "AUXILIAR",
     sede_codigo: "",
+    sedes_adicionales: [] as string[],
     password: "",
   })
 
@@ -110,9 +114,20 @@ export default function UsuariosPage() {
     fetchSedes()
   }, [])
 
+  // Debounce del término; al cambiar la búsqueda, vuelve a la página 1.
   useEffect(() => {
-    fetchUsuarios(page)
-  }, [page])
+    const t = setTimeout(() => {
+      setDebouncedSearch(searchInput)
+      setPage(1)
+    }, 350)
+    return () => clearTimeout(t)
+  }, [searchInput])
+
+  // Búsqueda server-side: el término va como query param al GET (filtra ANTES
+  // de paginar), así encuentra en TODAS las páginas. Sin término = lista completa.
+  useEffect(() => {
+    fetchUsuarios(page, debouncedSearch)
+  }, [page, debouncedSearch])
 
   const handleOpenDialog = (usuario?: Usuario) => {
     setShowPassword(false)
@@ -124,7 +139,11 @@ export default function UsuariosPage() {
         nombre: usuario.nombre,
         cargo: usuario.cargo,
         rol: usuario.rol,
-        sede_codigo: usuario.sede_codigo,
+        // Códigos normalizados a string (D-e): la columna es TEXT, pero blindamos
+        // Select/checkboxes/filtros para que operen todos en el mismo tipo.
+        sede_codigo: String(usuario.sede_codigo),
+        // Adicionales = todas las sedes menos la principal.
+        sedes_adicionales: (usuario.sedes || []).map(String).filter((c) => c !== String(usuario.sede_codigo)),
         password: "",
       })
     } else {
@@ -136,6 +155,7 @@ export default function UsuariosPage() {
         cargo: "",
         rol: "AUXILIAR",
         sede_codigo: "",
+        sedes_adicionales: [],
         password: "",
       })
     }
@@ -159,13 +179,23 @@ export default function UsuariosPage() {
     try {
       const method = editingId ? "PUT" : "POST"
       const endpoint = editingId ? `/api/usuarios/${editingId}` : "/api/usuarios"
-      const payload: Record<string, string> = {
+      const payload: {
+        documento: string
+        email: string
+        nombre: string
+        cargo: string
+        rol: string
+        sede_codigo: string
+        sedes_adicionales: string[]
+        password?: string
+      } = {
         documento: formData.documento.replace(/[\.\,\s\-]/g, ""),
         email: formData.email,
         nombre: formData.nombre,
         cargo: formData.cargo,
         rol: formData.rol,
         sede_codigo: formData.sede_codigo,
+        sedes_adicionales: formData.sedes_adicionales,
       }
 
       // Solo enviar password si hay algo escrito Y el rol es ADMIN
@@ -213,23 +243,6 @@ export default function UsuariosPage() {
     }
   }
 
-  const handleDelete = async (usuario: Usuario) => {
-    if (!confirm(`¿Estás seguro de que deseas ELIMINAR permanentemente a ${usuario.nombre}? Esta acción no se puede deshacer.`)) return
-
-    try {
-      const res = await fetch(`/api/usuarios/${usuario.id}`, { method: "DELETE" })
-      if (res.ok) {
-        toast.success("Usuario eliminado permanentemente")
-        fetchUsuarios(page)
-      } else {
-        const data = await res.json()
-        toast.error(data.error || "Error al eliminar usuario")
-      }
-    } catch (error) {
-      toast.error("Error de conexión")
-    }
-  }
-
   const columns: ColumnDef<Usuario>[] = [
     {
       accessorKey: "documento",
@@ -249,8 +262,24 @@ export default function UsuariosPage() {
       ),
     },
     {
-      accessorKey: "sede_nombre",
+      accessorKey: "sede_codigo",
       header: "Sede",
+      cell: ({ row }) => {
+        const u = row.original
+        const nombreDe = (cod: string) =>
+          sedes.find((s) => String(s.codigo) === String(cod))?.nombre || cod
+        const extra = (u.sedes?.length ?? 1) - 1
+        return (
+          <div className="flex items-center gap-2">
+            <span>{nombreDe(u.sede_codigo)}</span>
+            {extra > 0 && (
+              <Badge variant="secondary" title={(u.sedes || []).map(nombreDe).join(", ")}>
+                +{extra}
+              </Badge>
+            )}
+          </div>
+        )
+      },
     },
     {
       accessorKey: "activo",
@@ -292,13 +321,6 @@ export default function UsuariosPage() {
               ) : (
                 <><UserCheck className="h-4 w-4" /> Activar</>
               )}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => handleDelete(row.original)}
-              className="text-destructive flex items-center gap-2"
-            >
-              <Trash2 className="h-4 w-4" />
-              Eliminar
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -399,18 +421,79 @@ export default function UsuariosPage() {
 
             <div className="space-y-2">
               <Label htmlFor="sede_codigo">Sede</Label>
-              <Select value={formData.sede_codigo} onValueChange={(val) => setFormData({ ...formData, sede_codigo: val })}>
+              <Select
+                value={formData.sede_codigo}
+                onValueChange={(val) =>
+                  setFormData((prev) => {
+                    const nueva = String(val)
+                    const anterior = String(prev.sede_codigo)
+                    let adicionales = prev.sedes_adicionales.filter((c) => c !== nueva)
+                    // Regla (i): al EDITAR, si cambia la sede principal, la anterior se
+                    // conserva como adicional (nunca se pierde acceso en silencio; se
+                    // puede destildar abajo). Se antepone para respetar [A, X, ...].
+                    if (editingId && anterior && anterior !== nueva && !adicionales.includes(anterior)) {
+                      adicionales = [anterior, ...adicionales]
+                    }
+                    return { ...prev, sede_codigo: nueva, sedes_adicionales: adicionales }
+                  })
+                }
+              >
                 <SelectTrigger id="sede_codigo">
                   <SelectValue placeholder="Selecciona una sede" />
                 </SelectTrigger>
                 <SelectContent>
                   {sedes.map((sede) => (
-                    <SelectItem key={sede.codigo} value={sede.codigo}>
+                    <SelectItem key={String(sede.codigo)} value={String(sede.codigo)}>
                       {sede.nombre}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>
+                Sedes adicionales{" "}
+                <span className="font-normal text-muted-foreground">(opcional)</span>
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Otras tiendas que atiende, además de la principal. Al iniciar cada jornada,
+                el auxiliar elige en cuál trabaja ese día.
+              </p>
+              {formData.sede_codigo ? (
+                <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
+                  {sedes
+                    .filter((s) => String(s.codigo) !== String(formData.sede_codigo))
+                    .map((sede) => {
+                      const cod = String(sede.codigo)
+                      return (
+                        <label
+                          key={cod}
+                          className="flex cursor-pointer items-center gap-2 py-1 text-sm"
+                        >
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-[#1c5a2a]"
+                            checked={formData.sedes_adicionales.includes(cod)}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                sedes_adicionales: e.target.checked
+                                  ? [...prev.sedes_adicionales, cod]
+                                  : prev.sedes_adicionales.filter((c) => c !== cod),
+                              }))
+                            }
+                          />
+                          <span>{sede.nombre}</span>
+                        </label>
+                      )
+                    })}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Selecciona primero la sede principal.
+                </p>
+              )}
             </div>
 
             {formData.rol === "ADMIN" && (
@@ -461,8 +544,14 @@ export default function UsuariosPage() {
         totalCount={totalCount}
         onPageChange={setPage}
         isLoading={loading}
-        searchKey="documento"
-        searchPlaceholder="Buscar por documento..."
+        toolbar={
+          <Input
+            placeholder="Buscar por cédula o nombre..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="max-w-sm"
+          />
+        }
       />
     </div>
   )

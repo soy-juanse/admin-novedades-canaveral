@@ -6,6 +6,8 @@ export interface Usuario {
   cargo: string
   rol: "ADMIN" | "AUXILIAR"
   sede_codigo: number
+  // Multi-sede: array de códigos de sede; SIEMPRE incluye la principal (sede_codigo) en [0].
+  sedes: string[]
   activo: boolean
   created_at: string
   password_hash?: string | null
