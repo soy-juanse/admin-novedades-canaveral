@@ -59,6 +59,8 @@ export default function UsuariosPage() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
+  const [searchInput, setSearchInput] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const pageSize = 10
 
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -112,9 +114,20 @@ export default function UsuariosPage() {
     fetchSedes()
   }, [])
 
+  // Debounce del término; al cambiar la búsqueda, vuelve a la página 1.
   useEffect(() => {
-    fetchUsuarios(page)
-  }, [page])
+    const t = setTimeout(() => {
+      setDebouncedSearch(searchInput)
+      setPage(1)
+    }, 350)
+    return () => clearTimeout(t)
+  }, [searchInput])
+
+  // Búsqueda server-side: el término va como query param al GET (filtra ANTES
+  // de paginar), así encuentra en TODAS las páginas. Sin término = lista completa.
+  useEffect(() => {
+    fetchUsuarios(page, debouncedSearch)
+  }, [page, debouncedSearch])
 
   const handleOpenDialog = (usuario?: Usuario) => {
     setShowPassword(false)
@@ -531,8 +544,14 @@ export default function UsuariosPage() {
         totalCount={totalCount}
         onPageChange={setPage}
         isLoading={loading}
-        searchKey="documento"
-        searchPlaceholder="Buscar por documento..."
+        toolbar={
+          <Input
+            placeholder="Buscar por cédula o nombre..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="max-w-sm"
+          />
+        }
       />
     </div>
   )
