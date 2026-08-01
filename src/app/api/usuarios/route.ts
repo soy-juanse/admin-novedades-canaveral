@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServerClient()
 
-    const { documento, email, nombre, cargo, rol, sede_codigo, password, activo } =
+    const { documento, email, nombre, cargo, rol, sede_codigo, password, activo, sedes_adicionales } =
       await request.json()
 
     // Validate required fields (password solo obligatoria para ADMIN)
@@ -102,6 +102,34 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Multi-sede — INVARIANTE (Obs 1 Fase 1): sede_codigo (principal) NOT NULL y
+    // `sedes` SIEMPRE contiene la principal en [0]. El servidor CONSTRUYE el array
+    // e IGNORA cualquier `sedes` que venga en el body (un request directo no puede
+    // inyectar un array sin la principal). T5 versión admin.
+    const principal = String(sede_codigo)
+    const adicionales = Array.isArray(sedes_adicionales)
+      ? [...new Set(sedes_adicionales.map((c: unknown) => String(c)))].filter((c) => c !== principal)
+      : []
+    const sedesArray = [principal, ...adicionales]
+
+    // `sedes text[]` no tiene FK por elemento: validar que TODA sede exista.
+    const { data: sedesRows, error: sedesErr } = await supabase
+      .from("sedes")
+      .select("codigo")
+      .in("codigo", sedesArray)
+    if (sedesErr) {
+      console.error("Sedes check error:", sedesErr)
+      return NextResponse.json({ error: sedesErr.message }, { status: 400 })
+    }
+    const sedesExistentes = new Set((sedesRows || []).map((s) => String(s.codigo)))
+    const faltantes = sedesArray.filter((c) => !sedesExistentes.has(c))
+    if (faltantes.length > 0) {
+      return NextResponse.json(
+        { error: `Estas sedes no existen: ${faltantes.join(", ")}` },
+        { status: 400 }
+      )
+    }
+
     // Hash password solo si se proporcionó (ADMIN)
     const insertData: Record<string, unknown> = {
       documento,
@@ -109,7 +137,8 @@ export async function POST(request: NextRequest) {
       nombre,
       cargo,
       rol,
-      sede_codigo,
+      sede_codigo: principal,
+      sedes: sedesArray,
       activo: activo !== false,
     }
 
@@ -129,12 +158,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: createError.message }, { status: 400 })
     }
 
-    // Log activity
-    await supabase.from("log_actividad").insert({
-      usuario_id: session.sub,
-      accion: "CREATE_USUARIO",
-      detalle: `Usuario creado: ${nombre} (${documento})`,
-    })
+    // Log activity — nunca debe tumbar la operación (D-b).
+    try {
+      await supabase.from("log_actividad").insert({
+        usuario_id: session.sub,
+        accion: "CREATE_USUARIO",
+        detalle: `Usuario creado: ${nombre} (${documento}) — sedes: [${sedesArray.join(", ")}]`,
+      })
+    } catch (logErr) {
+      console.error("log_actividad insert failed (CREATE_USUARIO):", logErr)
+    }
 
     return NextResponse.json(
       {
