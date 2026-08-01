@@ -24,7 +24,9 @@ const navItems = [
   { href: "/sedes", label: "Sedes", icon: MapPin },
 ]
 
-const dashboardUrl = process.env.NEXT_PUBLIC_DASHBOARD_URL || "#"
+const dashboardUrl =
+  process.env.NEXT_PUBLIC_DASHBOARD_URL ||
+  "https://lookerstudio.google.com/u/0/reporting/abb5b6eb-1707-4f92-bcba-b243069ba133/page/TWblF"
 
 export function Sidebar() {
   const pathname = usePathname()
