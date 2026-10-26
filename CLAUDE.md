@@ -102,9 +102,7 @@ admin/
 │   │   └── utils.ts                        # cn() helper
 │   ├── middleware.ts                        # Auth guard (JWT verify en edge)
 │   └── types/database.ts                   # Interfaces TypeScript
-├── Dockerfile                              # Multi-stage build
-├── .dockerignore
-├── next.config.ts                          # output: "standalone"
+├── next.config.ts                          # sin output standalone (deploy en Vercel)
 ├── .env.local                              # ⚠️ NO está en git
 └── package.json
 ```
@@ -131,7 +129,7 @@ export const supabase = new Proxy({} as SupabaseClient, {
   },
 })
 
-// ❌ INCORRECTO — rompe el build Docker
+// ❌ INCORRECTO — rompe el build
 export const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, ...)
 ```
 
